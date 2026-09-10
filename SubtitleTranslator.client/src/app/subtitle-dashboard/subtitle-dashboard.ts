@@ -1,7 +1,8 @@
+import { Component, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { HttpClient, HttpClientModule } from '@angular/common/http';
-import { DragDropDirective } from './drag-drop.directive';
+import { HttpClient } from '@angular/common/http';
+import { DragDropDirective } from '../directives/drag-drop.directive';
 
 interface ServerFile {
   name: string;
@@ -9,10 +10,11 @@ interface ServerFile {
 }
 
 @Component({
-  imports: [CommonModule, FormsModule, HttpClientModule, DragDropDirective],
+  imports: [CommonModule, FormsModule, DragDropDirective],
   selector: 'app-subtitle-dashboard',
   styleUrl: './subtitle-dashboard.scss',
   templateUrl: './subtitle-dashboard.html',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SubtitleDashboard {
   serverFiles: ServerFile[] = [];
