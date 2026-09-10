@@ -20,12 +20,10 @@ export class SubtitleDashboard {
   serverFiles: ServerFile[] = [];
   selectedServerFile: ServerFile | null = null;
   activeFile: File | null = null;
-  targetLanguage: string = 'es';
+  targetLanguage: string = "km";
   isProcessing: boolean = false;
   successMessage: string = '';
-
-  private baseApiUrl = 'https://localhost:7001/api/subtitle';
-
+  private baseApiUrl = '/api/subtitle';
   constructor(private http: HttpClient) {}
 
   ngOnInit(): void {
@@ -33,9 +31,12 @@ export class SubtitleDashboard {
   }
 
   loadServerFiles(): void {
-    this.http.get<ServerFile[]>(`${this.baseApiUrl}/files`)
+    this.http.get<ServerFile[]>('/api/Subtitle/files')
       .subscribe({
-        next: (files) => this.serverFiles = files,
+        next: (files) => {
+          console.log('Loaded server files:', files);
+          this.serverFiles = files;
+        },
         error: (err) => console.error('Failed to look up directory index:', err)
       });
   }
@@ -77,7 +78,7 @@ export class SubtitleDashboard {
     payload.append('file', this.activeFile);
     payload.append('targetLanguage', this.targetLanguage);
 
-    this.http.post<{success: boolean, savedPath: string}>(`${this.baseApiUrl}/translate-and-save`, payload)
+    this.http.post<{ success: boolean, savedPath: string }>('/api/Subtitle/translate-and-save', payload)
       .subscribe({
         next: (response) => {
           this.isProcessing = false;

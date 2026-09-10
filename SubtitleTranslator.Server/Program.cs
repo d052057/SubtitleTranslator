@@ -15,15 +15,20 @@ if (builder.Environment.IsDevelopment())
     // even though Windows hides the difference.
     builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
 }
-
 const string AngularCorsPolicy = "_angularCorsPolicy";
+
+var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>();
+if (allowedOrigins is null || allowedOrigins.Length == 0)
+{
+    allowedOrigins = ["http://localhost:4200"];
+}
 
 builder.Services.AddCors(options =>
 {
     options.AddPolicy(name: AngularCorsPolicy,
         policy =>
         {
-            policy.WithOrigins("http://localhost:4200")
+            policy.WithOrigins(allowedOrigins)
                   .AllowAnyMethod()
                   .AllowAnyHeader()
                   .WithExposedHeaders("Content-Disposition");

@@ -363,4 +363,7 @@ MigrationBackup/
 .ionide/
 
 # Fody - auto-generated XML schema
-FodyWeavers.xsd
+FodyWeavers.xsd"translation-key.json" 
+
+# SubtitleTranslator
+translation-key.json

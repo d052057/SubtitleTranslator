@@ -14,6 +14,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="translation-key.json.example" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="appsettings.Local.json" />
   </ItemGroup>
 
