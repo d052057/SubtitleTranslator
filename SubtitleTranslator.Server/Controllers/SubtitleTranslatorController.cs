@@ -1,8 +1,8 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using Google.Cloud.Translation.V2;
-using Google.Apis.Auth.OAuth2;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
+using SubtitleTranslator.Server.Models;
+using SubtitleTranslator.Server.Services;
 using System.Text;
-using System.Text.RegularExpressions;
 
 namespace SubtitleTranslator.Server.Controllers
 {
@@ -10,158 +10,100 @@ namespace SubtitleTranslator.Server.Controllers
     [Route("api/[controller]")]
     public class SubtitleController : ControllerBase
     {
-        private readonly string _storagePath = @"d:\medias\closecaption";
-        private readonly string _outputPath = @"d:\medias\closecaption\translate";
-        private readonly IConfiguration _configuration;
+        private static readonly HashSet<string> AllowedExtensions =
+            new(StringComparer.OrdinalIgnoreCase) { ".srt", ".vtt" };
 
-        public SubtitleController(IConfiguration configuration)
+        private readonly SubtitleSettings _settings;
+        private readonly ISubtitleTranslationService _translationService;
+        private readonly ILogger<SubtitleController> _logger;
+
+        public SubtitleController(
+            IOptions<SubtitleSettings> settings,
+            ISubtitleTranslationService translationService,
+            ILogger<SubtitleController> logger)
         {
-            _configuration = configuration;
+            _settings = settings.Value;
+            _translationService = translationService;
+            _logger = logger;
         }
 
-        // 1. GET: api/subtitle/files
+        // GET: api/subtitle/files
         [HttpGet("files")]
         public IActionResult GetAvailableFiles()
         {
-            if (!Directory.Exists(_storagePath)) return Ok(new List<object>());
+            if (string.IsNullOrWhiteSpace(_settings.StoragePath) || !Directory.Exists(_settings.StoragePath))
+                return Ok(Array.Empty<object>());
 
-            var files = Directory.GetFiles(_storagePath)
-                .Where(f => f.EndsWith(".srt", StringComparison.OrdinalIgnoreCase) ||
-                            f.EndsWith(".vtt", StringComparison.OrdinalIgnoreCase))
-                .Select(f => new
-                {
-                    name = Path.GetFileName(f),
-                    type = Path.GetExtension(f).Replace(".", "").ToLower()
-                })
-                .ToList();
+            try
+            {
+                var files = Directory.EnumerateFiles(_settings.StoragePath)
+                    .Where(f => AllowedExtensions.Contains(Path.GetExtension(f)))
+                    .Select(f => new
+                    {
+                        name = Path.GetFileName(f),
+                        type = Path.GetExtension(f).TrimStart('.').ToLowerInvariant()
+                    })
+                    .ToList();
 
-            return Ok(files);
+                return Ok(files);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogError(ex, "Failed to list subtitle files in {StoragePath}", _settings.StoragePath);
+                return StatusCode(StatusCodes.Status500InternalServerError, "Unable to read the subtitle storage directory.");
+            }
         }
 
-        // 2. POST: api/subtitle/translate-and-save
+        // POST: api/subtitle/translate-and-save
         [HttpPost("translate-and-save")]
         [DisableRequestSizeLimit]
-        public async Task<IActionResult> TranslateAndSave(IFormFile file, [FromForm] string targetLanguage)
+        public async Task<IActionResult> TranslateAndSave(
+            IFormFile file,
+            [FromForm] string targetLanguage,
+            CancellationToken cancellationToken)
         {
-            if (file == null || file.Length == 0) return BadRequest("No subtitle context provided.");
+            if (file is null || file.Length == 0)
+                return BadRequest("No subtitle file was provided.");
 
-            string credentialsPath = _configuration["GoogleCloud:CredentialsPath"] ?? "";
+            if (string.IsNullOrWhiteSpace(targetLanguage))
+                return BadRequest("A target language is required.");
 
-            if (string.IsNullOrEmpty(credentialsPath) || !System.IO.File.Exists(credentialsPath))
+            var extension = Path.GetExtension(file.FileName);
+            if (!AllowedExtensions.Contains(extension))
+                return BadRequest($"Unsupported file type '{extension}'. Only .srt and .vtt files are allowed.");
+
+            if (_settings.MaxFileSizeBytes > 0 && file.Length > _settings.MaxFileSizeBytes)
+                return BadRequest($"File exceeds the maximum allowed size of {_settings.MaxFileSizeBytes / (1024 * 1024)} MB.");
+
+            try
             {
-                return StatusCode(500, "Google Cloud CredentialsPath configuration is invalid or missing inside appsettings.");
-            }
-
-            // Clean, non-deprecated credential parsing pipeline
-            GoogleCredential credential;
-            using (var stream = new FileStream(credentialsPath, FileMode.Open, FileAccess.Read))
-            {
-                credential = await GoogleCredential.FromStreamAsync(stream, default);
-            }
-            var client = TranslationClient.Create(credential);
-
-            var rawFileLines = new List<string>();
-            var blocksToTranslate = new List<string>();
-            var trackingMap = new Dictionary<int, List<int>>();
-
-            using (var reader = new StreamReader(file.OpenReadStream(), Encoding.UTF8))
-            {
-                string? currentLine;
-                int fileLinePointer = 0;
-                var workingBlockIndices = new List<int>();
-                var workingBlockText = new List<string>();
-
-                while ((currentLine = await reader.ReadLineAsync()) != null)
+                string translatedContent;
+                await using (var stream = file.OpenReadStream())
                 {
-                    rawFileLines.Add(currentLine);
-
-                    bool isTimestamp = Regex.IsMatch(currentLine, @"\d{2}:\d{2}:\d{2}");
-                    bool isNumericIndex = int.TryParse(currentLine.Trim(), out _);
-                    bool isVttHeader = currentLine.StartsWith("WEBVTT");
-
-                    if (isTimestamp || isNumericIndex || isVttHeader || string.IsNullOrWhiteSpace(currentLine))
-                    {
-                        if (workingBlockText.Count > 0)
-                        {
-                            PackageSubtitleBlock(workingBlockText, workingBlockIndices, blocksToTranslate, trackingMap);
-                            workingBlockText.Clear();
-                            workingBlockIndices.Clear();
-                        }
-                    }
-                    else
-                    {
-                        workingBlockText.Add(currentLine);
-                        workingBlockIndices.Add(fileLinePointer);
-                    }
-                    fileLinePointer++;
+                    translatedContent = await _translationService.TranslateSubtitleAsync(stream, targetLanguage, cancellationToken);
                 }
 
-                if (workingBlockText.Count > 0)
-                {
-                    PackageSubtitleBlock(workingBlockText, workingBlockIndices, blocksToTranslate, trackingMap);
-                }
-            }
+                Directory.CreateDirectory(_settings.OutputPath);
 
-            if (blocksToTranslate.Count > 0)
+                // Path.GetFileName strips any directory segments the client might smuggle in
+                // (e.g. "../../evil.srt"), and the guid avoids collisions/overwrites.
+                var safeFileName = Path.GetFileName(file.FileName);
+                var outputFileName = $"translated_{targetLanguage}_{Guid.NewGuid():N}_{safeFileName}";
+                var destinationPath = Path.Combine(_settings.OutputPath, outputFileName);
+
+                await System.IO.File.WriteAllTextAsync(destinationPath, translatedContent, Encoding.UTF8, cancellationToken);
+
+                return Ok(new { success = true, savedPath = destinationPath });
+            }
+            catch (OperationCanceledException)
             {
-                var translationResponses = new List<TranslationResult>();
-                int chunkSize = 500;
-
-                for (int i = 0; i < blocksToTranslate.Count; i += chunkSize)
-                {
-                    var chunk = blocksToTranslate.Skip(i).Take(chunkSize).ToList();
-
-                    // FIXED: Changed 'Format.Html' to use explicit mapping 'TranslationFormat.Html'
-                    var chunkResponse = client.TranslateText(chunk, targetLanguage, null, TranslationModel.Base, TranslationFormat.Html);
-                    translationResponses.AddRange(chunkResponse);
-                }
-
-                for (int i = 0; i < translationResponses.Count; i++)
-                {
-                    string returnedHtml = translationResponses[i].TranslatedText;
-                    var innerTagMatches = Regex.Matches(returnedHtml, @"<div>(.*?)<\/div>");
-                    var originalLineIndices = trackingMap[i];
-
-                    for (int tagIdx = 0; tagIdx < innerTagMatches.Count; tagIdx++)
-                    {
-                        if (tagIdx < originalLineIndices.Count)
-                        {
-                            int targetedOriginalLine = originalLineIndices[tagIdx];
-
-                            // FIXED: Targeted specific capture inner group [1] and called its .Value property cleanly
-                            string targetText = innerTagMatches[tagIdx].Groups[1].Value;
-
-                            rawFileLines[targetedOriginalLine] = System.Net.WebUtility.HtmlDecode(targetText);
-                        }
-                    }
-                }
+                return StatusCode(499); // client closed the request before it finished
             }
-
-            var finalStringBuilder = new StringBuilder();
-            foreach (var constructedLine in rawFileLines)
+            catch (Exception ex)
             {
-                finalStringBuilder.AppendLine(constructedLine);
+                _logger.LogError(ex, "Subtitle translation failed for {FileName}", file.FileName);
+                return StatusCode(StatusCodes.Status500InternalServerError, "Translation failed. Please try again.");
             }
-
-            string cleanFileName = Path.GetFileName(file.FileName);
-            string destinationPath = Path.Combine(_outputPath, $"translated_{targetLanguage}_{cleanFileName}");
-
-            await System.IO.File.WriteAllTextAsync(destinationPath, finalStringBuilder.ToString(), Encoding.UTF8);
-
-            return Ok(new { success = true, savedPath = destinationPath });
-        }
-
-        private void PackageSubtitleBlock(List<string> dialogueLines, List<int> linePointers, List<string> batchContainer, Dictionary<int, List<int>> mappingRegistry)
-        {
-            var htmlSegmentBuilder = new StringBuilder();
-            foreach (var lineItem in dialogueLines)
-            {
-                htmlSegmentBuilder.Append($"<div>{System.Net.WebUtility.HtmlEncode(lineItem)}</div>");
-            }
-            int targetBatchIdx = batchContainer.Count;
-            batchContainer.Add(htmlSegmentBuilder.ToString());
-            mappingRegistry[targetBatchIdx] = new List<int>(linePointers);
         }
     }
 }
-
