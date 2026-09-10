@@ -6,7 +6,7 @@
   },
   "newProjectRoot": "projects",
   "projects": {
-    "standaloneangulartemplate.client": {
+    "subtitletranslator.client": {
       "projectType": "application",
       "schematics": {
         "@schematics/angular:component": {
@@ -42,7 +42,7 @@
         "build": {
           "builder": "@angular/build:application",
           "options": {
-            "outputPath": "dist/standaloneangulartemplate.client",
+            "outputPath": "dist/subtitletranslator.client",
             "index": "src/index.html",
             "browser": "src/main.ts",
             "polyfills": [
@@ -94,10 +94,10 @@
           "builder": "@angular/build:dev-server",
           "configurations": {
             "production": {
-              "buildTarget": "standaloneangulartemplate.client:build:production"
+              "buildTarget": "subtitletranslator.client:build:production"
             },
             "development": {
-              "buildTarget": "standaloneangulartemplate.client:build:development"
+              "buildTarget": "subtitletranslator.client:build:development"
             }
           },
           "defaultConfiguration": "development",

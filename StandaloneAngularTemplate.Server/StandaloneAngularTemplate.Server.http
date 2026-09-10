@@ -1,6 +1,0 @@
-@StandaloneAngularTemplate.Server_HostAddress = http://localhost:5135
-
-GET {{StandaloneAngularTemplate.Server_HostAddress}}/weatherforecast/
-Accept: application/json
-
-###

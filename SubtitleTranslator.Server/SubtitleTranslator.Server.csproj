@@ -4,7 +4,7 @@
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <SpaRoot>..\standaloneangulartemplate.client</SpaRoot>
+    <SpaRoot>..\SubtitleTranslator.client</SpaRoot>
     <SpaProxyLaunchCommand>npm start</SpaProxyLaunchCommand>
     <SpaProxyServerUrl>https://localhost:57729</SpaProxyServerUrl>
   </PropertyGroup>
@@ -16,7 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\standaloneangulartemplate.client\standaloneangulartemplate.client.esproj">
+    <ProjectReference Include="..\SubtitleTranslator.client\SubtitleTranslator.client.esproj">
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
   </ItemGroup>

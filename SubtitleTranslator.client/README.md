@@ -60,7 +60,7 @@ For more information on using the Angular CLI, including detailed command refere
 
 ## How to add template to VS2022:
 ## to uninstall existing template
-dotnet new uninstall standaloneangulartemplate
+dotnet new uninstall subtitletranslator
           
 ## to install new template to a folder of a project - make sure you to type '.' 
           
