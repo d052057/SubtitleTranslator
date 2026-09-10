@@ -5,13 +5,26 @@ using System.Text.RegularExpressions;
 
 namespace SubtitleTranslator.Server.Services
 {
+    /// <summary>
+    /// The result of translating a subtitle file: the reconstructed file content, plus
+    /// the source language Google Translate detected (null if it couldn't tell, e.g. no
+    /// translatable dialogue lines were found).
+    /// </summary>
+    public record SubtitleTranslationResult(string Content, string? DetectedSourceLanguage);
+
     public interface ISubtitleTranslationService
     {
         /// <summary>
         /// Reads an SRT/VTT stream, translates the dialogue lines, and returns the
         /// reconstructed file content with translated text in place of the originals.
         /// </summary>
-        Task<string> TranslateSubtitleAsync(Stream subtitleStream, string targetLanguage, CancellationToken cancellationToken = default);
+        Task<SubtitleTranslationResult> TranslateSubtitleAsync(Stream subtitleStream, string targetLanguage, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// True if targetLanguage is one Google Cloud Translation currently supports.
+        /// The underlying list is fetched once and cached for the app's lifetime.
+        /// </summary>
+        Task<bool> IsSupportedLanguageAsync(string targetLanguage, CancellationToken cancellationToken = default);
     }
 
     public class SubtitleTranslationService : ISubtitleTranslationService
@@ -26,20 +39,55 @@ namespace SubtitleTranslator.Server.Services
         private readonly TranslationClient _translationClient;
         private readonly ILogger<SubtitleTranslationService> _logger;
 
+        // Lazily populated on first use and reused for the app's lifetime - the list of
+        // supported languages doesn't change during a run, and fetching it is a network
+        // call we don't want to repeat on every request.
+        private readonly SemaphoreSlim _supportedLanguagesLock = new(1, 1);
+        private HashSet<string>? _supportedLanguageCodes;
+
         public SubtitleTranslationService(TranslationClient translationClient, ILogger<SubtitleTranslationService> logger)
         {
             _translationClient = translationClient;
             _logger = logger;
         }
 
-        public async Task<string> TranslateSubtitleAsync(Stream subtitleStream, string targetLanguage, CancellationToken cancellationToken = default)
+        public async Task<bool> IsSupportedLanguageAsync(string targetLanguage, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(targetLanguage)) return false;
+
+            if (_supportedLanguageCodes is null)
+            {
+                await _supportedLanguagesLock.WaitAsync(cancellationToken);
+                try
+                {
+                    // Double-checked locking: another request may have populated this
+                    // while we were waiting for the lock.
+                    if (_supportedLanguageCodes is null)
+                    {
+                        var languages = await _translationClient.ListLanguagesAsync(
+                            LanguageCodes.English, cancellationToken: cancellationToken);
+
+                        _supportedLanguageCodes = new HashSet<string>(
+                            languages.Select(l => l.Code), StringComparer.OrdinalIgnoreCase);
+                    }
+                }
+                finally
+                {
+                    _supportedLanguagesLock.Release();
+                }
+            }
+
+            return _supportedLanguageCodes.Contains(targetLanguage);
+        }
+
+        public async Task<SubtitleTranslationResult> TranslateSubtitleAsync(Stream subtitleStream, string targetLanguage, CancellationToken cancellationToken = default)
         {
             var (rawLines, blocks, lineMap) = await ParseSubtitleAsync(subtitleStream, cancellationToken);
 
             if (blocks.Count == 0)
             {
                 _logger.LogWarning("No translatable dialogue lines were found in the uploaded subtitle file.");
-                return string.Join(Environment.NewLine, rawLines);
+                return new SubtitleTranslationResult(string.Join(Environment.NewLine, rawLines), DetectedSourceLanguage: null);
             }
 
             var translations = new List<TranslationResult>(blocks.Count);
@@ -62,7 +110,13 @@ namespace SubtitleTranslator.Server.Services
 
             ApplyTranslations(rawLines, translations, lineMap);
 
-            return string.Join(Environment.NewLine, rawLines);
+            // All blocks come from the same file, so the first detected language is a
+            // reasonable stand-in for "the file's language" even though each block was
+            // detected independently - genuinely mixed-language files are rare enough
+            // not to warrant surfacing every distinct detection.
+            var detectedSourceLanguage = translations.Count > 0 ? translations[0].DetectedSourceLanguage : null;
+
+            return new SubtitleTranslationResult(string.Join(Environment.NewLine, rawLines), detectedSourceLanguage);
         }
 
         private static async Task<(List<string> RawLines, List<string> Blocks, Dictionary<int, List<int>> LineMap)> ParseSubtitleAsync(

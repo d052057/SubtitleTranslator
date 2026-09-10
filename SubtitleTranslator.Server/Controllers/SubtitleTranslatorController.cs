@@ -68,6 +68,9 @@ namespace SubtitleTranslator.Server.Controllers
             if (string.IsNullOrWhiteSpace(targetLanguage))
                 return BadRequest("A target language is required.");
 
+            if (!await _translationService.IsSupportedLanguageAsync(targetLanguage, cancellationToken))
+                return BadRequest($"'{targetLanguage}' is not a language Google Translate currently supports.");
+
             var extension = Path.GetExtension(file.FileName);
             if (!AllowedExtensions.Contains(extension))
                 return BadRequest($"Unsupported file type '{extension}'. Only .srt and .vtt files are allowed.");
@@ -77,10 +80,10 @@ namespace SubtitleTranslator.Server.Controllers
 
             try
             {
-                string translatedContent;
+                SubtitleTranslationResult translationResult;
                 await using (var stream = file.OpenReadStream())
                 {
-                    translatedContent = await _translationService.TranslateSubtitleAsync(stream, targetLanguage, cancellationToken);
+                    translationResult = await _translationService.TranslateSubtitleAsync(stream, targetLanguage, cancellationToken);
                 }
 
                 Directory.CreateDirectory(_settings.OutputPath);
@@ -91,9 +94,14 @@ namespace SubtitleTranslator.Server.Controllers
                 var outputFileName = $"translated_{targetLanguage}_{Guid.NewGuid():N}_{safeFileName}";
                 var destinationPath = Path.Combine(_settings.OutputPath, outputFileName);
 
-                await System.IO.File.WriteAllTextAsync(destinationPath, translatedContent, Encoding.UTF8, cancellationToken);
+                await System.IO.File.WriteAllTextAsync(destinationPath, translationResult.Content, Encoding.UTF8, cancellationToken);
 
-                return Ok(new { success = true, savedPath = destinationPath });
+                return Ok(new
+                {
+                    success = true,
+                    savedPath = destinationPath,
+                    detectedSourceLanguage = translationResult.DetectedSourceLanguage
+                });
             }
             catch (OperationCanceledException)
             {

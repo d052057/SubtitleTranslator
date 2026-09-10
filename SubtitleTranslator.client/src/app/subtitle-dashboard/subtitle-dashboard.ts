@@ -78,17 +78,23 @@ export class SubtitleDashboard {
     payload.append('file', this.activeFile);
     payload.append('targetLanguage', this.targetLanguage);
 
-    this.http.post<{ success: boolean, savedPath: string }>('/api/Subtitle/translate-and-save', payload)
+    this.http.post<{ success: boolean, savedPath: string, detectedSourceLanguage: string | null }>('/api/Subtitle/translate-and-save', payload)
       .subscribe({
         next: (response) => {
           this.isProcessing = false;
-          this.successMessage = `File translated successfully!`;
+          this.successMessage = response.detectedSourceLanguage
+            ? `File translated successfully! Detected source language: ${response.detectedSourceLanguage}`
+            : 'File translated successfully!';
           this.activeFile = null;
           this.loadServerFiles();
         },
         error: (err) => {
           console.error('Translation pipeline error:', err);
-          alert('Error communicating with translation server backend.');
+          // The server returns a specific message for known failure cases
+          // (unsupported language, bad file type, etc.) - show that instead
+          // of a generic message when it's available.
+          const serverMessage = typeof err?.error === 'string' ? err.error : null;
+          alert(serverMessage ?? 'Error communicating with translation server backend.');
           this.isProcessing = false;
         }
       });
