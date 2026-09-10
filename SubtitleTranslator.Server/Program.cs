@@ -1,4 +1,3 @@
-using Google.Apis.Auth.OAuth2;
 using Google.Cloud.Translation.V2;
 using Microsoft.Extensions.Options;
 using SubtitleTranslator.Server.Models;
@@ -47,49 +46,21 @@ builder.Services.Configure<SubtitleSettings>(builder.Configuration.GetSection("S
 // credential loading is comparatively expensive and the client itself is safe
 // to share across requests.
 //
-// Two auth modes are supported, checked in this order:
-//
-// 1) GoogleCloud:ApiKey - a plain Cloud Translation API key. Quick to set up
-//    for local development/testing, but Google recommends OAuth2 credentials
-//    where possible: an API key can't be scoped to a principal or revoked as
-//    granularly as a service account key, and it authorizes whoever holds the
-//    string, not a specific caller.
-//
-// 2) GoogleCloud:CredentialsPath - a service account JSON key (the original,
-//    recommended path). CredentialsPath (on TranslationClientBuilder) and
-//    GoogleCredential.FromFile/FromJson/FromStreamAsync are all deprecated by
-//    Google for the same reason: they load an ambiguous credential type from
-//    an external source. CredentialFactory is the replacement - it loads the
-//    file as the *specific* credential type we expect (a service account
-//    key), which is then converted to a GoogleCredential and handed to the
-//    builder's non-deprecated GoogleCredential property.
-//
-// Both values live in appsettings.Local.json, which is gitignored - never
-// put a real key or credentials path in appsettings.json/appsettings.Development.json.
+// Auth is a plain Cloud Translation API key (GoogleCloud:ApiKey), which lives
+// in appsettings.Local.json - gitignored, never committed. Note this is
+// simpler than a service-account key but less secure long-term: an API key
+// authorizes whoever holds the string rather than a specific principal, and
+// can't be scoped/revoked as granularly. Restrict it in Google Cloud Console
+// (limit it to the Cloud Translation API, and to specific IPs if possible)
+// if this ever runs anywhere other than your own machine.
 var apiKey = builder.Configuration["GoogleCloud:ApiKey"];
-TranslationClient translationClient;
-
-if (!string.IsNullOrWhiteSpace(apiKey))
+if (string.IsNullOrWhiteSpace(apiKey))
 {
-    translationClient = TranslationClient.CreateFromApiKey(apiKey);
+    throw new InvalidOperationException(
+        "GoogleCloud:ApiKey is missing. Set it in appsettings.Local.json.");
 }
-else
-{
-    var credentialsPath = builder.Configuration["GoogleCloud:CredentialsPath"];
-    if (string.IsNullOrWhiteSpace(credentialsPath) || !File.Exists(credentialsPath))
-    {
-        throw new InvalidOperationException(
-            "Set either GoogleCloud:ApiKey or a valid GoogleCloud:CredentialsPath in appsettings.Local.json.");
-    }
 
-    var serviceAccountCredential = CredentialFactory.FromFile<ServiceAccountCredential>(credentialsPath);
-    var googleCredential = serviceAccountCredential.ToGoogleCredential();
-
-    translationClient = new TranslationClientBuilder
-    {
-        GoogleCredential = googleCredential
-    }.Build();
-}
+var translationClient = TranslationClient.CreateFromApiKey(apiKey);
 
 builder.Services.AddSingleton(translationClient);
 
