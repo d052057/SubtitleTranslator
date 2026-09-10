@@ -1,6 +1,0 @@
-{
-  "_comment": "Copy this file to appsettings.Local.json and fill in real values. appsettings.Local.json is git-ignored and never committed.",
-  "ConnectionStrings": {
-    "DefaultConnection": ""
-  }
-}

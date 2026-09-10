@@ -1,49 +1,40 @@
 var builder = WebApplication.CreateBuilder(args);
 
-// Local development secrets (connection strings, API keys, JWT key, etc.)
-// This file is git-ignored - see .gitignore - and lives only on this machine.
-// It's optional so the app still starts fine if it doesn't exist yet.
-builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+// Load the local configuration file during development
+if (builder.Environment.IsDevelopment())
+{
+    builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: true);
+}
 
-// Add services to the container.
-// Allowed origins are configured per environment (see appsettings.*.json).
-// The SPA is served same-origin by this app (MapFallbackToFile below), so CORS
-// is only needed for external clients calling the API directly - keep the list explicit.
-var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>() ?? [];
+const string AngularCorsPolicy = "_angularCorsPolicy";
 
 builder.Services.AddCors(options =>
 {
-    options.AddDefaultPolicy(policy =>
-        policy.WithOrigins(allowedOrigins)
-              .AllowAnyHeader()
-              .AllowAnyMethod());
+    options.AddPolicy(name: AngularCorsPolicy,
+        policy =>
+        {
+            policy.WithOrigins("http://localhost:4200")
+                  .AllowAnyMethod()
+                  .AllowAnyHeader()
+                  .WithExposedHeaders("Content-Disposition");
+        });
 });
+
 builder.Services.AddControllers();
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddOpenApi();
+builder.Services.AddEndpointsApiExplorer();
 
 var app = builder.Build();
-app.UseCors();
 
-app.UseDefaultFiles();
-app.MapStaticAssets();
+// Auto-ensure physical folder workspaces exist on launch
+string baseFolder = @"d:\medias\closecaption";
+string translateFolder = Path.Combine(baseFolder, "translate");
+if (!Directory.Exists(baseFolder)) Directory.CreateDirectory(baseFolder);
+if (!Directory.Exists(translateFolder)) Directory.CreateDirectory(translateFolder);
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();
-    app.UseSwaggerUI(
-        options =>
-        {
-            options.SwaggerEndpoint("../openapi/v1.json", "version 1");
-        });
-}
 app.UseHttpsRedirection();
-
+app.UseRouting();
+app.UseCors(AngularCorsPolicy);
 app.UseAuthorization();
-
 app.MapControllers();
-
-app.MapFallbackToFile("/index.html");
 
 app.Run();

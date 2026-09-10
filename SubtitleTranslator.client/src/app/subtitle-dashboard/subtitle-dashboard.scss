@@ -1,0 +1,30 @@
+.list-group-item {
+  transition: background-color 0.2s ease, color 0.15s ease;
+  cursor: pointer;
+
+  &.active {
+    background-color: var(--bs-primary);
+    border-color: var(--bs-primary);
+  }
+
+  &:hover:not(.active) {
+    background-color: rgba(var(--bs-black-rgb), 0.03);
+  }
+}
+
+.drop-zone-wrapper {
+  border-style: dashed !important;
+  border-color: #dee2e6;
+  transition: all 0.25s ease-in-out;
+
+  &.drag-over {
+    background-color: rgba(var(--bs-primary-rgb), 0.06) !important;
+    border-color: var(--bs-primary) !important;
+    transform: scale(1.01);
+  }
+}
+
+.extra-small {
+  font-size: 0.65rem;
+  padding: 0.25em 0.5em;
+}
