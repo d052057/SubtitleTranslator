@@ -47,26 +47,49 @@ builder.Services.Configure<SubtitleSettings>(builder.Configuration.GetSection("S
 // credential loading is comparatively expensive and the client itself is safe
 // to share across requests.
 //
-// CredentialsPath (on TranslationClientBuilder) and GoogleCredential.FromFile/
-// FromJson/FromStreamAsync are all deprecated by Google for the same reason:
-// they load an ambiguous credential type from an external source. CredentialFactory
-// is the replacement - it loads the file as the *specific* credential type we
-// expect (a service account key), which is then converted to a GoogleCredential
-// and handed to the builder's non-deprecated GoogleCredential property.
-var credentialsPath = builder.Configuration["GoogleCloud:CredentialsPath"];
-if (string.IsNullOrWhiteSpace(credentialsPath) || !File.Exists(credentialsPath))
+// Two auth modes are supported, checked in this order:
+//
+// 1) GoogleCloud:ApiKey - a plain Cloud Translation API key. Quick to set up
+//    for local development/testing, but Google recommends OAuth2 credentials
+//    where possible: an API key can't be scoped to a principal or revoked as
+//    granularly as a service account key, and it authorizes whoever holds the
+//    string, not a specific caller.
+//
+// 2) GoogleCloud:CredentialsPath - a service account JSON key (the original,
+//    recommended path). CredentialsPath (on TranslationClientBuilder) and
+//    GoogleCredential.FromFile/FromJson/FromStreamAsync are all deprecated by
+//    Google for the same reason: they load an ambiguous credential type from
+//    an external source. CredentialFactory is the replacement - it loads the
+//    file as the *specific* credential type we expect (a service account
+//    key), which is then converted to a GoogleCredential and handed to the
+//    builder's non-deprecated GoogleCredential property.
+//
+// Both values live in appsettings.Local.json, which is gitignored - never
+// put a real key or credentials path in appsettings.json/appsettings.Development.json.
+var apiKey = builder.Configuration["GoogleCloud:ApiKey"];
+TranslationClient translationClient;
+
+if (!string.IsNullOrWhiteSpace(apiKey))
 {
-    throw new InvalidOperationException(
-        "GoogleCloud:CredentialsPath is missing or invalid. Set it in appsettings.Local.json.");
+    translationClient = TranslationClient.CreateFromApiKey(apiKey);
 }
-
-var serviceAccountCredential = CredentialFactory.FromFile<ServiceAccountCredential>(credentialsPath);
-var googleCredential = serviceAccountCredential.ToGoogleCredential();
-
-var translationClient = new TranslationClientBuilder
+else
 {
-    GoogleCredential = googleCredential
-}.Build();
+    var credentialsPath = builder.Configuration["GoogleCloud:CredentialsPath"];
+    if (string.IsNullOrWhiteSpace(credentialsPath) || !File.Exists(credentialsPath))
+    {
+        throw new InvalidOperationException(
+            "Set either GoogleCloud:ApiKey or a valid GoogleCloud:CredentialsPath in appsettings.Local.json.");
+    }
+
+    var serviceAccountCredential = CredentialFactory.FromFile<ServiceAccountCredential>(credentialsPath);
+    var googleCredential = serviceAccountCredential.ToGoogleCredential();
+
+    translationClient = new TranslationClientBuilder
+    {
+        GoogleCredential = googleCredential
+    }.Build();
+}
 
 builder.Services.AddSingleton(translationClient);
 

@@ -1,0 +1,11 @@
+{
+  "//": "Copy this file to appsettings.Local.json (gitignored) and fill in ONE of the two GoogleCloud options below. Never commit the real file.",
+
+  "GoogleCloud": {
+    "//ApiKey": "Quick local setup: a plain Cloud Translation API key.",
+    "ApiKey": "",
+
+    "//CredentialsPath": "Recommended for anything beyond local testing: path to a service-account JSON key.",
+    "CredentialsPath": ""
+  }
+}
