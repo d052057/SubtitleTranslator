@@ -29,9 +29,12 @@ namespace SubtitleTranslator.Server.Services
 
     public class SubtitleTranslationService : ISubtitleTranslationService
     {
-        // Google Translate's batch endpoint has practical limits on request size;
-        // chunking keeps individual calls well within them.
-        private const int ChunkSize = 500;
+        // Google Cloud Translation API v2's REST endpoint hard-caps requests at 128 text
+        // segments (https://cloud.google.com/translate/docs/basic/translating-text) -
+        // going over returns a 400 "Too many text segments" error, not a soft warning.
+        // Chunking keeps every request under that limit regardless of how many cues the
+        // subtitle file has.
+        private const int ChunkSize = 128;
 
         private static readonly Regex TimestampPattern = new(@"\d{2}:\d{2}:\d{2}", RegexOptions.Compiled);
         private static readonly Regex HtmlDivPattern = new(@"<div>(.*?)</div>", RegexOptions.Compiled);

@@ -12,9 +12,9 @@
       </div>
 
       <div class="list-group list-group-flush shadow-sm rounded border">
-        @for (file of serverFiles; track file.name) {
+        @for (file of serverFiles(); track file.name) {
         <button type="button" class="list-group-item list-group-item-action d-flex align-items-center justify-content-between py-2"
-                [class.active]="selectedServerFile === file" (click)="selectServerFile(file)">
+                [class.active]="selectedServerFile() === file" (click)="selectServerFile(file)">
           <span class="text-truncate small fw-semibold text-start d-block">{{ file.name }}</span>
           <span class="badge bg-light text-dark border extra-small">{{ file.type.toUpperCase() }}</span>
         </button>
@@ -35,18 +35,18 @@
         <div class="d-inline-flex justify-content-center mx-auto mb-2">
           <input type="file" class="form-control form-control-sm" id="subtitleFileInput" accept=".srt,.vtt" (change)="onFileSelected($event)" />
         </div>
-        @if (activeFile) {
+        @if (activeFile()) {
         <div class="badge bg-success-subtle text-success p-2 mt-2 border border-success-subtle mx-auto fs-6">
-          <i class="bi bi-file-earmark-check-fill me-1"></i> Selected File: <strong>{{ activeFile.name }}</strong>
+          <i class="bi bi-file-earmark-check-fill me-1"></i> Selected File: <strong>{{ activeFile()!.name }}</strong>
         </div>
         }
       </div>
 
-      @if (successMessage) {
+      @if (successMessage()) {
       <div class="alert alert-success d-flex align-items-center shadow-sm" role="alert">
         <i class="bi bi-check-circle-fill me-2 fs-5"></i>
         <div>
-          {{ successMessage }}<br />
+          {{ successMessage() }}<br />
           <small class="text-muted">Target Destination: <strong>d:/medias/closecaption/translate/</strong></small>
         </div>
       </div>
@@ -64,8 +64,8 @@
             </select>
           </div>
           <div class="col-sm-6">
-            <button class="btn btn-primary w-100 py-2 fw-bold" [disabled]="!activeFile || isProcessing" (click)="submitToTranslator()">
-              @if (isProcessing) {
+            <button class="btn btn-primary w-100 py-2 fw-bold" [disabled]="!activeFile() || isProcessing()" (click)="submitToTranslator()">
+              @if (isProcessing()) {
               <span class="spinner-border spinner-border-sm me-2"></span>Translating...
               } @else {
               <i class="bi bi-cloud-download-fill me-2"></i>Process and Save directly to Disk
