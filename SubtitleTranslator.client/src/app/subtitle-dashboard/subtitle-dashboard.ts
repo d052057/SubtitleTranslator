@@ -9,6 +9,8 @@ interface ServerFile {
   type: 'srt' | 'vtt';
 }
 
+type TranslateResponse = { success: boolean, savedPath: string, detectedSourceLanguage: string | null };
+
 @Component({
   imports: [CommonModule, FormsModule, DragDropDirective],
   selector: 'app-subtitle-dashboard',
@@ -17,26 +19,19 @@ interface ServerFile {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SubtitleDashboard {
-  // These are signals, not plain fields, because they're all updated from
-  // async HTTP callbacks (subscribe next/error) rather than from a click or
-  // other event originating in this component's own template. Under OnPush,
-  // a plain field mutated that way doesn't trigger a re-render on its own -
-  // that was the bug (file list only appeared after clicking refresh, which
-  // happened to also fire a template event that forced a check). Signals
-  // don't have that gap: writing to one automatically notifies Angular this
-  // component needs checking, from anywhere, sync or async, no manual
-  // markForCheck() required.
+  // Signals because these are all mutated from async HTTP callbacks, not just
+  // from click handlers in this component's own template - see the comment
+  // history in git blame for the OnPush bug this originally fixed.
   serverFiles = signal<ServerFile[]>([]);
   selectedServerFile = signal<ServerFile | null>(null);
   activeFile = signal<File | null>(null);
   isProcessing = signal(false);
   successMessage = signal('');
 
-  // Plain property is fine here: [(ngModel)] updates it via (ngModelChange),
-  // a template event on this component, which OnPush already picks up.
+  // Plain property: [(ngModel)] updates it via a template event, which OnPush
+  // already handles correctly on its own.
   targetLanguage: string = 'km';
 
-  private baseApiUrl = '/api/subtitle';
   constructor(private http: HttpClient) {}
 
   ngOnInit(): void {
@@ -46,10 +41,7 @@ export class SubtitleDashboard {
   loadServerFiles(): void {
     this.http.get<ServerFile[]>('/api/Subtitle/files')
       .subscribe({
-        next: (files) => {
-          console.log('Loaded server files:', files);
-          this.serverFiles.set(files);
-        },
+        next: (files) => this.serverFiles.set(files),
         error: (err) => console.error('Failed to look up directory index:', err)
       });
   }
@@ -69,6 +61,10 @@ export class SubtitleDashboard {
     const extension = file.name.split('.').pop()?.toLowerCase();
     if (extension === 'srt' || extension === 'vtt') {
       this.activeFile.set(file);
+      // An uploaded file and a server-side file selection are mutually
+      // exclusive sources for the same "Process" button - picking one clears
+      // the other so it's always unambiguous which one gets translated.
+      this.selectedServerFile.set(null);
       this.successMessage.set('');
     } else {
       alert('Please use valid .srt or .vtt files only.');
@@ -77,42 +73,61 @@ export class SubtitleDashboard {
 
   selectServerFile(file: ServerFile): void {
     this.selectedServerFile.set(file);
+    this.activeFile.set(null);
     this.successMessage.set('');
-    alert(`To translate "${file.name}", drag and drop it from your D:/medias/closecaption folder into the dashed area.`);
+  }
+
+  get hasSelection(): boolean {
+    return this.activeFile() !== null || this.selectedServerFile() !== null;
   }
 
   submitToTranslator(): void {
-    const file = this.activeFile();
-    if (!file) return;
+    const uploadedFile = this.activeFile();
+    const serverFile = this.selectedServerFile();
+    if (!uploadedFile && !serverFile) return;
 
     this.isProcessing.set(true);
     this.successMessage.set('');
 
+    const request$ = uploadedFile
+      ? this.translateUploadedFile(uploadedFile)
+      : this.translateServerFile(serverFile!);
+
+    request$.subscribe({
+      next: (response) => {
+        this.isProcessing.set(false);
+        this.successMessage.set(
+          response.detectedSourceLanguage
+            ? `File translated successfully! Detected source language: ${response.detectedSourceLanguage}`
+            : 'File translated successfully!'
+        );
+        this.activeFile.set(null);
+        this.selectedServerFile.set(null);
+        this.loadServerFiles();
+      },
+      error: (err) => {
+        console.error('Translation pipeline error:', err);
+        // The server returns a specific message for known failure cases
+        // (unsupported language, bad file type, etc.) - show that instead
+        // of a generic message when it's available.
+        const serverMessage = typeof err?.error === 'string' ? err.error : null;
+        alert(serverMessage ?? 'Error communicating with translation server backend.');
+        this.isProcessing.set(false);
+      }
+    });
+  }
+
+  private translateUploadedFile(file: File) {
     const payload = new FormData();
     payload.append('file', file);
     payload.append('targetLanguage', this.targetLanguage);
+    return this.http.post<TranslateResponse>('/api/Subtitle/translate-and-save', payload);
+  }
 
-    this.http.post<{ success: boolean, savedPath: string, detectedSourceLanguage: string | null }>('/api/Subtitle/translate-and-save', payload)
-      .subscribe({
-        next: (response) => {
-          this.isProcessing.set(false);
-          this.successMessage.set(
-            response.detectedSourceLanguage
-              ? `File translated successfully! Detected source language: ${response.detectedSourceLanguage}`
-              : 'File translated successfully!'
-          );
-          this.activeFile.set(null);
-          this.loadServerFiles();
-        },
-        error: (err) => {
-          console.error('Translation pipeline error:', err);
-          // The server returns a specific message for known failure cases
-          // (unsupported language, bad file type, etc.) - show that instead
-          // of a generic message when it's available.
-          const serverMessage = typeof err?.error === 'string' ? err.error : null;
-          alert(serverMessage ?? 'Error communicating with translation server backend.');
-          this.isProcessing.set(false);
-        }
-      });
+  private translateServerFile(file: ServerFile) {
+    return this.http.post<TranslateResponse>('/api/Subtitle/translate-server-file', {
+      fileName: file.name,
+      targetLanguage: this.targetLanguage
+    });
   }
 }

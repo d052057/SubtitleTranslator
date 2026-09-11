@@ -31,13 +31,18 @@
            appDragDrop (fileDropped)="onFileDroppedViaInterface($event)">
         <i class="bi bi-box-arrow-in-down display-4 text-primary mb-2"></i>
         <h5 class="fw-bold">Drag & Drop Subtitle File From Folder Here</h5>
-        <p class="text-muted small">Drag files from your computer to run the background translation process.</p>
+        <p class="text-muted small">Drag a file from your computer here, or click a file in the Source Folder list on the left.</p>
         <div class="d-inline-flex justify-content-center mx-auto mb-2">
           <input type="file" class="form-control form-control-sm" id="subtitleFileInput" accept=".srt,.vtt" (change)="onFileSelected($event)" />
         </div>
         @if (activeFile()) {
         <div class="badge bg-success-subtle text-success p-2 mt-2 border border-success-subtle mx-auto fs-6">
           <i class="bi bi-file-earmark-check-fill me-1"></i> Selected File: <strong>{{ activeFile()!.name }}</strong>
+        </div>
+        }
+        @if (selectedServerFile()) {
+        <div class="badge bg-primary-subtle text-primary p-2 mt-2 border border-primary-subtle mx-auto fs-6">
+          <i class="bi bi-hdd-fill me-1"></i> Selected from server: <strong>{{ selectedServerFile()!.name }}</strong>
         </div>
         }
       </div>
@@ -64,7 +69,7 @@
             </select>
           </div>
           <div class="col-sm-6">
-            <button class="btn btn-primary w-100 py-2 fw-bold" [disabled]="!activeFile() || isProcessing()" (click)="submitToTranslator()">
+            <button class="btn btn-primary w-100 py-2 fw-bold" [disabled]="!hasSelection || isProcessing()" (click)="submitToTranslator()">
               @if (isProcessing()) {
               <span class="spinner-border spinner-border-sm me-2"></span>Translating...
               } @else {
